@@ -1,53 +1,248 @@
-name: Build APK
+name: Build Android APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  build:
+  build-apk:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Кэшируем Cargo, чтобы не скачивать зависимости каждый раз
+      - name: Setup Rust with Cache
+        uses: Swatinem/rust-cache@v2
         with:
           targets: aarch64-linux-android
+          cache-on-failure: true
+
+      - name: Setup Rust Target
+        run: rustup target add aarch64-linux-android
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r25c
+          add-to-path: true
 
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk
-
-      - name: Build Rust binary
-        run: |
-          cargo ndk -t arm64-v8a build --release
-          mkdir -p android/app/src/main/assets
-          cp target/aarch64-linux-android/release/rust_messenger \
-             android/app/src/main/assets/
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      # Кэш Gradle для ускорения сборки APK
+      - name: Setup Gradle Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      # Компилируем Rust под Android. 
+      # ВАЖНО: флаг -o указывает, куда положить .so библиотеки
+      - name: Build Rust binary
+        run: |
+          cargo ndk -t arm64-v8a -o ./android/app/src/main/jniLibs build --release
+
+      # Генерируем файлы Android проекта
+      - name: Generate Android project
+        run: |
+          PKG_ID="com.example.rustmessenger"
+          PKG_PATH="com/example/rustmessenger"
+          APP_NAME="RustMessenger"
+
+          mkdir -p android/app/src/main/java/$PKG_PATH
+          mkdir -p android/app/src/main/assets
+          mkdir -p android/app/src/main/jniLibs
+          mkdir -p android/gradle/wrapper
+
+          cat > android/settings.gradle <<EOF
+          rootProject.name = "$APP_NAME"
+          include ':app'
+          EOF
+
+          cat > android/build.gradle <<EOF
+          buildscript {
+              repositories { google(); mavenCentral() }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.1.4'
+              }
+          }
+          allprojects {
+              repositories { google(); mavenCentral() }
+          }
+          EOF
+
+          cat > android/gradle.properties <<EOF
+          org.gradle.jvmargs=-Xmx2048m
+          android.useAndroidX=true
+          EOF
+
+          cat > android/app/build.gradle <<EOF
+          plugins { id 'com.android.application' }
+
+          android {
+              namespace '$PKG_ID'
+              compileSdk 33
+
+              defaultConfig {
+                  applicationId "$PKG_ID"
+                  minSdk 24
+                  targetSdk 33
+                  versionCode 1
+                  versionName "1.0.0"
+                  ndk { abiFilters 'arm64-v8a' }
+              }
+              buildTypes {
+                  release { minifyEnabled false }
+              }
+          }
+          EOF
+
+          cat > android/app/src/main/AndroidManifest.xml <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <application android:label="$APP_NAME"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > android/app/src/main/java/$PKG_PATH/MainActivity.java <<'JAVA'
+          package com.example.rustmessenger;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.widget.TextView;
+          import android.widget.ScrollView;
+          import android.widget.EditText;
+          import android.widget.LinearLayout;
+          import java.io.*;
+
+          public class MainActivity extends Activity {
+              private EditText input;
+              private TextView output;
+              private ScrollView scroll;
+              private Process proc;
+              private BufferedWriter procIn;
+
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(24, 24, 24, 24);
+
+                  output = new TextView(this);
+                  output.setTextSize(14);
+                  output.setText("Запуск Rust Messenger...\n");
+
+                  scroll = new ScrollView(this);
+                  scroll.addView(output);
+                  scroll.setLayoutParams(new LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+                  input = new EditText(this);
+                  input.setHint("Введи сообщение");
+                  input.setSingleLine(true);
+
+                  root.addView(scroll);
+                  root.addView(input);
+                  setContentView(root);
+
+                  startRustBinary();
+
+                  input.setOnEditorActionListener((v, a, e) -> {
+                      String t = input.getText().toString();
+                      if (!t.isEmpty() && procIn != null) {
+                          try {
+                              procIn.write(t + "\n");
+                              procIn.flush();
+                              input.setText("");
+                          } catch (IOException ignored) {}
+                      }
+                      return true;
+                  });
+              }
+
+              private void startRustBinary() {
+                  try {
+                      File bin = new File(getFilesDir(), "rust_messenger");
+                      if (!bin.exists()) {
+                          InputStream is = getAssets().open("rust_messenger");
+                          FileOutputStream os = new FileOutputStream(bin);
+                          byte[] buf = new byte[8192];
+                          int n;
+                          while ((n = is.read(buf)) > 0) os.write(buf, 0, n);
+                          os.close(); is.close();
+                          bin.setExecutable(true);
+                      }
+                      ProcessBuilder pb = new ProcessBuilder(bin.getAbsolutePath());
+                      pb.redirectErrorStream(true);
+                      proc = pb.start();
+                      procIn = new BufferedWriter(new OutputStreamWriter(proc.getOutputStream()));
+
+                      new Thread(() -> {
+                          try (BufferedReader r = new BufferedReader(
+                                  new InputStreamReader(proc.getInputStream()))) {
+                              String l;
+                              while ((l = r.readLine()) != null) {
+                                  final String s = l;
+                                  runOnUiThread(() -> append(s));
+                              }
+                          } catch (IOException ignored) {}
+                      }).start();
+                  } catch (Exception e) {
+                      append("Ошибка: " + e.getMessage());
+                  }
+              }
+
+              private void append(String s) {
+                  output.append(s + "\n");
+                  scroll.post(() -> scroll.fullScroll(ScrollView.FOCUS_DOWN));
+              }
+          }
+          JAVA
+
+          # Копируем ELF-бинарник (твой messenger) в assets
+          cp target/aarch64-linux-android/release/rust_messenger \
+             android/app/src/main/assets/rust_messenger
+          chmod +x android/app/src/main/assets/rust_messenger
+
+          # Генерируем Gradle wrapper
+          gradle wrapper --gradle-version 8.2 --quiet --project-dir android
 
       - name: Build APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: RustMessenger-APK
           path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
