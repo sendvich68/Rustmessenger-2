@@ -13,16 +13,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # --- ПРИНУДИТЕЛЬНОЕ ИСПРАВЛЕНИЕ СТРУКТУРЫ ---
+      # --- ИСПРАВЛЕНИЕ СТРУКТУРЫ ---
       - name: Force fix project structure
         run: |
           mkdir -p src
-          # Ищем твой файл и перекладываем его куда надо
           if [ -f "src/mine.rs" ]; then mv src/mine.rs src/main.rs; fi
           if [ -f "mine.rs" ]; then mv mine.rs src/main.rs; fi
           if [ -f "main.rs" ]; then mv main.rs src/main.rs; fi
           
-          # Создаем правильный Cargo.toml (как библиотеку)
           cat > Cargo.toml <<EOF
           [package]
           name = "rust_messenger"
@@ -35,11 +33,8 @@ jobs:
           path = "src/main.rs"
           EOF
           
-          echo "✅ Структура файлов исправлена:"
-          ls -la src/
-          cat Cargo.toml
+          echo "✅ Структура исправлена"
 
-      # --- ОКРУЖЕНИЕ ---
       - name: Setup Rust with Cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -60,6 +55,12 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+
+      # СКАЧИВАЕМ SDK СРАЗУ
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: "16.0"
 
       - name: Setup Gradle Cache
         uses: actions/cache@v4
@@ -91,32 +92,38 @@ jobs:
           mkdir -p android/app/src/main/jniLibs
           mkdir -p android/gradle/wrapper
 
-          # --- settings.gradle ---
+          # Исправленный settings.gradle (добавлен pluginManagement)
           cat > android/settings.gradle <<EOF
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
           rootProject.name = "$APP_NAME"
           include ':app'
           EOF
 
-          # --- build.gradle (root) ---
+          # Исправленный build.gradle (убран старый синтаксис)
           cat > android/build.gradle <<EOF
-          buildscript {
-              repositories { google(); mavenCentral() }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.1.4'
-              }
-          }
-          allprojects {
-              repositories { google(); mavenCentral() }
+          plugins {
+              id 'com.android.application' version '8.1.4' apply false
           }
           EOF
 
-          # --- gradle.properties ---
           cat > android/gradle.properties <<EOF
           org.gradle.jvmargs=-Xmx2048m
           android.useAndroidX=true
           EOF
 
-          # --- app/build.gradle ---
           cat > android/app/build.gradle <<EOF
           plugins { id 'com.android.application' }
 
@@ -138,7 +145,6 @@ jobs:
           }
           EOF
 
-          # --- AndroidManifest.xml ---
           cat > android/app/src/main/AndroidManifest.xml <<EOF
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -156,7 +162,6 @@ jobs:
           </manifest>
           EOF
 
-          # --- MainActivity.java ---
           cat > android/app/src/main/java/$PKG_PATH/MainActivity.java <<'JAVA'
           package com.example.rustmessenger;
 
@@ -253,20 +258,13 @@ jobs:
           }
           JAVA
 
-          # Копируем скомпилированный бинарник в assets
           cp target/aarch64-linux-android/release/rust_messenger \
              android/app/src/main/assets/rust_messenger
           chmod +x android/app/src/main/assets/rust_messenger
 
-          # Создаем Gradle wrapper
           gradle wrapper --gradle-version 8.2 --quiet --project-dir android
 
-      # --- НАСТРОЙКА SDK И СБОРКА APK ---
-      - name: Setup Android SDK for Gradle
-        uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: "16.0"
-
+      # --- СБОРКА APK ---
       - name: Build APK
         run: |
           cd android
