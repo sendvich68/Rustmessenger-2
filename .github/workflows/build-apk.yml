@@ -57,25 +57,22 @@ jobs:
           java-version: 17
 
       # --- РУЧНАЯ УСТАНОВКА ANDROID SDK ---
-      # Заменяем сломанный экшен на прямые ссылки
       - name: Manual Android SDK Setup
         run: |
           echo "📥 Скачиваем Android SDK..."
           mkdir -p $ANDROID_HOME/cmdline-tools
           cd $ANDROID_HOME/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip
-          unzip -q cmdline.zip
+          unzip -o -q cmdline.zip
           mv cmdline-tools latest
           cd $ANDROID_HOME
           
           echo "📥 Скачиваем Build-tools и Platform..."
-          # Скачиваем напрямую бинарники SDK
           wget -q https://dl.google.com/android/repository/platform-tools-latest-linux.zip
-          unzip -q platform-tools-latest-linux.zip
+          unzip -o -q platform-tools-latest-linux.zip
           mkdir -p build-tools
           wget -q https://dl.google.com/android/repository/build-tools_r33-linux.zip
-          unzip -q build-tools_r33-linux.zip -d build-tools
-          # Переименовываем папку, так как она называется по-другому внутри архива
+          unzip -o -q build-tools_r33-linux.zip -d build-tools
           mv build-tools/* build-tools/33.0.0 || true
           
           # Принимаем лицензии
