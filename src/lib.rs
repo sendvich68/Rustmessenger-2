@@ -49,8 +49,6 @@ fn save_users(names: &[String]) {
     }
 }
 
-// === ТОЧКА ВХОДА ДЛЯ ANDROID (JNI) ===
-// Мы вызываем эту функцию из Java
 #[no_mangle]
 pub extern "C" fn main_android() -> i32 {
     run_server_thread(); 
