@@ -100,6 +100,10 @@ jobs:
       # --- ГЕНЕРАЦИЯ ANDROID ПРОЕКТА ---
       - name: Generate Android project
         run: |
+          mkdir -p android
+          # ВАЖНО: Генерируем wrapper ДО создания build.gradle, чтобы старый gradle не упал
+          gradle wrapper --gradle-version 8.2 --quiet --project-dir android
+
           PKG_ID="com.example.rustmessenger"
           PKG_PATH="com/example/rustmessenger"
           APP_NAME="RustMessenger"
@@ -107,7 +111,6 @@ jobs:
           mkdir -p android/app/src/main/java/$PKG_PATH
           mkdir -p android/app/src/main/assets
           mkdir -p android/app/src/main/jniLibs
-          mkdir -p android/gradle/wrapper
 
           cat > android/settings.gradle <<EOF
           pluginManagement {
@@ -276,8 +279,6 @@ jobs:
           cp target/aarch64-linux-android/release/rust_messenger \
              android/app/src/main/assets/rust_messenger
           chmod +x android/app/src/main/assets/rust_messenger
-
-          gradle wrapper --gradle-version 8.2 --quiet --project-dir android
 
       # --- СБОРКА APK ---
       - name: Build APK
