@@ -112,6 +112,7 @@ jobs:
           android.useAndroidX=true
           EOF
 
+          # ВАЖНО: Добавлен блок signingConfigs в app/build.gradle
           cat > android/app/build.gradle <<EOF
           plugins { id 'com.android.application' }
           android {
@@ -125,7 +126,20 @@ jobs:
                   versionName "1.0.0"
                   ndk { abiFilters 'arm64-v8a' }
               }
-              buildTypes { release { minifyEnabled false } }
+              signingConfigs {
+                  debug {
+                      storeFile file("../debug.keystore")
+                      storePassword "android"
+                      keyAlias "androiddebugkey"
+                      keyPassword "android"
+                  }
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      signingConfig signingConfigs.debug // Подписываем релиз дебаг-ключом
+                  }
+              }
           }
           EOF
 
@@ -144,7 +158,6 @@ jobs:
           </manifest>
           EOF
 
-          # --- НОВЫЙ ИНТЕРФЕЙС JAVA ---
           cat > android/app/src/main/java/$PKG_PATH/MainActivity.java <<'JAVA'
           package com.example.rustmessenger;
 
@@ -243,15 +256,15 @@ jobs:
               private void sendChat() {
                   String text = inputMessage.getText().toString();
                   if (!text.isEmpty()) {
-                  send_message(text);
-                  appendChat("Вы: " + text);
-                  inputMessage.setText("");
-              }
+                      send_message(text);
+                      appendChat("Вы: " + text);
+                      inputMessage.setText("");
+                  }
               }
 
               private void appendChat(String msg) {
                   chatOutput.append(msg + "\n");
-                  chatScroll.post(() -> chatScroll.fullScroll(ScrollView.FOCUS_DOWN));
+                  chatScroll.post(() -> chatScroll.scrollTo(0, chatScroll.getBottom()));
               }
 
               private void showChat() {
@@ -274,15 +287,16 @@ jobs:
           gradle wrapper --gradle-version 8.2 --quiet
           chmod +x gradlew
 
+      # Генерируем ключ для подписи
       - name: Generate Debug Keystore
-  run: |
-    keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        run: |
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
 
-- name: Build APK
-  run: |
-    cd android
-    # Подписываем отладочным ключом
-    ./gradlew assembleRelease -Pandroid.injected.signing.store.file=$(pwd)/../debug.keystore -Pandroid.injected.signing.store.password=android -Pandroid.injected.signing.key.alias=androiddebugkey -Pandroid.injected.signing.key.password=android --no-daemon
+      - name: Build APK
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
