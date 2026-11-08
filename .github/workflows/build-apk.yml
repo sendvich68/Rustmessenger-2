@@ -13,7 +13,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Кэшируем Cargo, чтобы не скачивать зависимости каждый раз
       - name: Setup Rust with Cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -37,8 +36,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          skip-setup: true
 
-      # Кэш Gradle для ускорения сборки APK
       - name: Setup Gradle Cache
         uses: actions/cache@v4
         with:
@@ -52,13 +52,10 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
-      # Компилируем Rust под Android. 
-      # ВАЖНО: флаг -o указывает, куда положить .so библиотеки
       - name: Build Rust binary
         run: |
           cargo ndk -t arm64-v8a -o ./android/app/src/main/jniLibs build --release
 
-      # Генерируем файлы Android проекта
       - name: Generate Android project
         run: |
           PKG_ID="com.example.rustmessenger"
@@ -70,11 +67,13 @@ jobs:
           mkdir -p android/app/src/main/jniLibs
           mkdir -p android/gradle/wrapper
 
+          # --- settings.gradle ---
           cat > android/settings.gradle <<EOF
           rootProject.name = "$APP_NAME"
           include ':app'
           EOF
 
+          # --- build.gradle (root) ---
           cat > android/build.gradle <<EOF
           buildscript {
               repositories { google(); mavenCentral() }
@@ -87,11 +86,13 @@ jobs:
           }
           EOF
 
+          # --- gradle.properties ---
           cat > android/gradle.properties <<EOF
           org.gradle.jvmargs=-Xmx2048m
           android.useAndroidX=true
           EOF
 
+          # --- app/build.gradle ---
           cat > android/app/build.gradle <<EOF
           plugins { id 'com.android.application' }
 
@@ -113,6 +114,7 @@ jobs:
           }
           EOF
 
+          # --- AndroidManifest.xml ---
           cat > android/app/src/main/AndroidManifest.xml <<EOF
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -130,6 +132,7 @@ jobs:
           </manifest>
           EOF
 
+          # --- MainActivity.java ---
           cat > android/app/src/main/java/$PKG_PATH/MainActivity.java <<'JAVA'
           package com.example.rustmessenger;
 
@@ -226,12 +229,12 @@ jobs:
           }
           JAVA
 
-          # Копируем ELF-бинарник (твой messenger) в assets
+          # Копируем ELF-бинарник в assets
           cp target/aarch64-linux-android/release/rust_messenger \
              android/app/src/main/assets/rust_messenger
           chmod +x android/app/src/main/assets/rust_messenger
 
-          # Генерируем Gradle wrapper
+          # --- Генерируем Gradle wrapper ---
           gradle wrapper --gradle-version 8.2 --quiet --project-dir android
 
       - name: Build APK
