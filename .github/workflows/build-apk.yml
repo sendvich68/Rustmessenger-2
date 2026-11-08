@@ -127,7 +127,8 @@ jobs:
               }
               signingConfigs {
                   debug {
-                      storeFile file("debug.keystore")
+                      # ИСПРАВЛЕНИЕ: указываем абсолютный путь к ключу
+                      storeFile file(System.getenv("GITHUB_WORKSPACE") + "/android/debug.keystore")
                       storePassword "android"
                       keyAlias "androiddebugkey"
                       keyPassword "android"
@@ -286,7 +287,6 @@ jobs:
           gradle wrapper --gradle-version 8.2 --quiet
           chmod +x gradlew
 
-      # --- ГЕНЕРАЦИЯ КЛЮЧА В ПАПКЕ ANDROID ---
       - name: Generate Debug Keystore
         run: |
           cd android
