@@ -51,16 +51,16 @@ jobs:
           add-to-path: true
 
       - name: Setup Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5  # Обновили до v5
         with:
           distribution: temurin
           java-version: 17
 
-      # СКАЧИВАЕМ SDK СРАЗУ
+      # Универсальный подход к скачиванию Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          cmdline-tools-version: "16.0"
+          packages: 'tools platform-tools platforms;android-33 build-tools;33.0.0' # Скачиваем только нужное
 
       - name: Setup Gradle Cache
         uses: actions/cache@v4
@@ -92,7 +92,6 @@ jobs:
           mkdir -p android/app/src/main/jniLibs
           mkdir -p android/gradle/wrapper
 
-          # Исправленный settings.gradle (добавлен pluginManagement)
           cat > android/settings.gradle <<EOF
           pluginManagement {
               repositories {
@@ -112,7 +111,6 @@ jobs:
           include ':app'
           EOF
 
-          # Исправленный build.gradle (убран старый синтаксис)
           cat > android/build.gradle <<EOF
           plugins {
               id 'com.android.application' version '8.1.4' apply false
