@@ -125,6 +125,12 @@ jobs:
                   versionName "1.0.0"
                   ndk { abiFilters 'arm64-v8a' }
               }
+              packagingOptions {
+                  jniLibs {
+                      useLegacyPackaging = true
+                      pickFirsts += ['**/libc++_shared.so']
+                  }
+              }
               signingConfigs {
                   debug {
                       storeFile file(System.getenv("GITHUB_WORKSPACE") + "/android/debug.keystore")
@@ -167,7 +173,13 @@ jobs:
           import java.io.*;
 
           public class MainActivity extends Activity {
-              static { System.loadLibrary("rust_messenger"); }
+              static {
+                  try {
+                      System.loadLibrary("rust_messenger");
+                  } catch (UnsatisfiedLinkError e) {
+                      e.printStackTrace();
+                  }
+              }
 
               public native void init_rust();
               public native void start_server(int port);
@@ -185,8 +197,15 @@ jobs:
               @Override
               protected void onCreate(Bundle b) {
                   super.onCreate(b);
-                  init_rust();
-                  set_callback(msg -> runOnUiThread(() -> appendChat(msg)));
+                  try {
+                      init_rust();
+                      set_callback(msg -> runOnUiThread(() -> appendChat(msg)));
+                  } catch (Throwable t) {
+                      TextView errorView = new TextView(this);
+                      errorView.setText("Ошибка JNI: " + t.getMessage() + "\n" + t.toString());
+                      setContentView(errorView);
+                      return;
+                  }
 
                   layoutStart = new LinearLayout(this);
                   layoutStart.setOrientation(LinearLayout.VERTICAL);
