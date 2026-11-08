@@ -51,16 +51,36 @@ jobs:
           add-to-path: true
 
       - name: Setup Java 17
-        uses: actions/setup-java@v5  # Обновили до v5
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
 
-      # Универсальный подход к скачиванию Android SDK
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'tools platform-tools platforms;android-33 build-tools;33.0.0' # Скачиваем только нужное
+      # --- РУЧНАЯ УСТАНОВКА ANDROID SDK ---
+      # Заменяем сломанный экшен на прямые ссылки
+      - name: Manual Android SDK Setup
+        run: |
+          echo "📥 Скачиваем Android SDK..."
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          cd $ANDROID_HOME/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip
+          unzip -q cmdline.zip
+          mv cmdline-tools latest
+          cd $ANDROID_HOME
+          
+          echo "📥 Скачиваем Build-tools и Platform..."
+          # Скачиваем напрямую бинарники SDK
+          wget -q https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+          unzip -q platform-tools-latest-linux.zip
+          mkdir -p build-tools
+          wget -q https://dl.google.com/android/repository/build-tools_r33-linux.zip
+          unzip -q build-tools_r33-linux.zip -d build-tools
+          # Переименовываем папку, так как она называется по-другому внутри архива
+          mv build-tools/* build-tools/33.0.0 || true
+          
+          # Принимаем лицензии
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          echo "✅ Android SDK готов!"
 
       - name: Setup Gradle Cache
         uses: actions/cache@v4
