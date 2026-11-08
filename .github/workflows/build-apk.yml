@@ -127,7 +127,6 @@ jobs:
               }
               signingConfigs {
                   debug {
-                      # ИСПРАВЛЕНИЕ: указываем абсолютный путь к ключу
                       storeFile file(System.getenv("GITHUB_WORKSPACE") + "/android/debug.keystore")
                       storePassword "android"
                       keyAlias "androiddebugkey"
