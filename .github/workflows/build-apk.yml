@@ -13,6 +13,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ПРИНУДИТЕЛЬНОЕ ИСПРАВЛЕНИЕ СТРУКТУРЫ
+      # Если файл случайно называется mine.rs или лежит не там, мы исправим это на лету
+      - name: Force fix project structure
+        run: |
+          mkdir -p src
+          if [ -f "src/mine.rs" ]; then mv src/mine.rs src/main.rs; fi
+          if [ -f "mine.rs" ]; then mv mine.rs src/main.rs; fi
+          if [ -f "main.rs" ]; then mv main.rs src/main.rs; fi
+          
+          # Принудительно создаем правильный Cargo.toml
+          cat > Cargo.toml <<EOF
+          [package]
+          name = "rust_messenger"
+          version = "2.2.0"
+          edition = "2021"
+
+          [[bin]]
+          name = "rust_messenger"
+          path = "src/main.rs"
+          EOF
+          
+          echo "✅ Структура файлов исправлена:"
+          ls -la src/
+          cat Cargo.toml
+
       - name: Setup Rust with Cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -34,7 +59,6 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # Кэш Gradle
       - name: Setup Gradle Cache
         uses: actions/cache@v4
         with:
@@ -225,11 +249,10 @@ jobs:
 
           gradle wrapper --gradle-version 8.2 --quiet --project-dir android
 
-      # ВОТ ЗДЕСЬ МЫ СКАЧИВАЕМ SDK, КОГДА RUST УЖЕ СОБРАН
       - name: Setup Android SDK for Gradle
         uses: android-actions/setup-android@v3
         with:
-          cmdline-tools-version: "16.0" # Принудительно указываем версию
+          cmdline-tools-version: "16.0"
 
       - name: Build APK
         run: |
@@ -242,4 +265,4 @@ jobs:
         with:
           name: RustMessenger-APK
           path: android/app/build/outputs/apk/release/app-release.apk
-          retention-days: 30
+          retention-days: 30 км
