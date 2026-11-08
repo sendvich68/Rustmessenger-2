@@ -274,11 +274,15 @@ jobs:
           gradle wrapper --gradle-version 8.2 --quiet
           chmod +x gradlew
 
-      - name: Build APK
-        run: |
-          cd android
-          ./gradlew assembleRelease --no-daemon
+      - name: Generate Debug Keystore
+  run: |
+    keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
 
+- name: Build APK
+  run: |
+    cd android
+    # Подписываем отладочным ключом
+    ./gradlew assembleRelease -Pandroid.injected.signing.store.file=$(pwd)/../debug.keystore -Pandroid.injected.signing.store.password=android -Pandroid.injected.signing.key.alias=androiddebugkey -Pandroid.injected.signing.key.password=android --no-daemon
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
