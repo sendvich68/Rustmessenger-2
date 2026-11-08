@@ -13,7 +13,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # --- ИСПРАВЛЕНИЕ СТРУКТУРЫ ---
+      # --- ИСПРАВЛЕНИЕ СТРУКТУРЫ И CARGO.TOML ---
       - name: Force fix project structure
         run: |
           mkdir -p src
@@ -21,6 +21,7 @@ jobs:
           if [ -f "mine.rs" ]; then mv mine.rs src/main.rs; fi
           if [ -f "main.rs" ]; then mv main.rs src/main.rs; fi
           
+          # Создаем ПРАВИЛЬНЫЙ Cargo.toml только как библиотеку
           cat > Cargo.toml <<EOF
           [package]
           name = "rust_messenger"
@@ -33,7 +34,8 @@ jobs:
           path = "src/main.rs"
           EOF
           
-          echo "✅ Структура исправлена"
+          echo "✅ Структура и Cargo.toml исправлены"
+          cat Cargo.toml
 
       - name: Setup Rust with Cache
         uses: Swatinem/rust-cache@v2
@@ -56,54 +58,31 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # --- РУЧНАЯ УСТАНОВКА ANDROID SDK ---
       - name: Manual Android SDK Setup
         run: |
-          echo "📥 Скачиваем Android SDK..."
           mkdir -p $ANDROID_HOME/cmdline-tools
           cd $ANDROID_HOME/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip
           unzip -o -q cmdline.zip
           mv cmdline-tools latest
           cd $ANDROID_HOME
-          
-          echo "📥 Скачиваем Build-tools и Platform..."
           wget -q https://dl.google.com/android/repository/platform-tools-latest-linux.zip
           unzip -o -q platform-tools-latest-linux.zip
           mkdir -p build-tools
           wget -q https://dl.google.com/android/repository/build-tools_r33-linux.zip
           unzip -o -q build-tools_r33-linux.zip -d build-tools
           mv build-tools/* build-tools/33.0.0 || true
-          
-          # Принимаем лицензии
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          echo "✅ Android SDK готов!"
-
-      - name: Setup Gradle Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
-      # --- СБОРКА RUST ---
       - name: Build Rust binary
         run: |
           cargo ndk -t arm64-v8a -o ./android/app/src/main/jniLibs build --release
 
-      # --- ГЕНЕРАЦИЯ ANDROID ПРОЕКТА ---
       - name: Generate Android project
         run: |
-          mkdir -p android
-          # ВАЖНО: Генерируем wrapper ДО создания build.gradle, чтобы старый gradle не упал
-          gradle wrapper --gradle-version 8.2 --quiet --project-dir android
-
           PKG_ID="com.example.rustmessenger"
           PKG_PATH="com/example/rustmessenger"
           APP_NAME="RustMessenger"
@@ -114,18 +93,11 @@ jobs:
 
           cat > android/settings.gradle <<EOF
           pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
           }
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
+              repositories { google(); mavenCentral() }
           }
           rootProject.name = "$APP_NAME"
           include ':app'
@@ -144,11 +116,9 @@ jobs:
 
           cat > android/app/build.gradle <<EOF
           plugins { id 'com.android.application' }
-
           android {
               namespace '$PKG_ID'
               compileSdk 33
-
               defaultConfig {
                   applicationId "$PKG_ID"
                   minSdk 24
@@ -157,9 +127,7 @@ jobs:
                   versionName "1.0.0"
                   ndk { abiFilters 'arm64-v8a' }
               }
-              buildTypes {
-                  release { minifyEnabled false }
-              }
+              buildTypes { release { minifyEnabled false } }
           }
           EOF
 
@@ -167,10 +135,8 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET"/>
-              <application android:label="$APP_NAME"
-                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
-                  <activity android:name=".MainActivity"
-                      android:exported="true">
+              <application android:label="$APP_NAME" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
                           <category android:name="android.intent.category.LAUNCHER"/>
@@ -192,6 +158,9 @@ jobs:
           import java.io.*;
 
           public class MainActivity extends Activity {
+              static { System.loadLibrary("rust_messenger"); }
+              public native int main_android();
+
               private EditText input;
               private TextView output;
               private ScrollView scroll;
@@ -222,7 +191,7 @@ jobs:
                   root.addView(input);
                   setContentView(root);
 
-                  startRustBinary();
+                  startRust();
 
                   input.setOnEditorActionListener((v, a, e) -> {
                       String t = input.getText().toString();
@@ -237,35 +206,42 @@ jobs:
                   });
               }
 
-              private void startRustBinary() {
+              private void startRust() {
                   try {
-                      File bin = new File(getFilesDir(), "rust_messenger");
-                      if (!bin.exists()) {
-                          InputStream is = getAssets().open("rust_messenger");
-                          FileOutputStream os = new FileOutputStream(bin);
-                          byte[] buf = new byte[8192];
-                          int n;
-                          while ((n = is.read(buf)) > 0) os.write(buf, 0, n);
-                          os.close(); is.close();
-                          bin.setExecutable(true);
+                      // Пробуем JNI (правильный путь для Android)
+                      main_android();
+                      append("✅ Rust Messenger запущен через JNI");
+                  } catch (Throwable t) {
+                      append("Ошибка JNI: " + t.getMessage());
+                      // Fallback: запуск бинарника (может не работать на новых Android)
+                      try {
+                          File bin = new File(getFilesDir(), "rust_messenger");
+                          if (!bin.exists()) {
+                              InputStream is = getAssets().open("rust_messenger");
+                              FileOutputStream os = new FileOutputStream(bin);
+                              byte[] buf = new byte[8192];
+                              int n;
+                              while ((n = is.read(buf)) > 0) os.write(buf, 0, n);
+                              os.close(); is.close();
+                              bin.setExecutable(true);
+                          }
+                          ProcessBuilder pb = new ProcessBuilder(bin.getAbsolutePath());
+                          pb.redirectErrorStream(true);
+                          proc = pb.start();
+                          procIn = new BufferedWriter(new OutputStreamWriter(proc.getOutputStream()));
+                          new Thread(() -> {
+                              try (BufferedReader r = new BufferedReader(
+                                      new InputStreamReader(proc.getInputStream()))) {
+                                  String l;
+                                  while ((l = r.readLine()) != null) {
+                                      final String s = l;
+                                      runOnUiThread(() -> append(s));
+                                  }
+                              } catch (IOException ignored) {}
+                          }).start();
+                      } catch (Exception e) {
+                          append("Ошибка fallback: " + e.getMessage());
                       }
-                      ProcessBuilder pb = new ProcessBuilder(bin.getAbsolutePath());
-                      pb.redirectErrorStream(true);
-                      proc = pb.start();
-                      procIn = new BufferedWriter(new OutputStreamWriter(proc.getOutputStream()));
-
-                      new Thread(() -> {
-                          try (BufferedReader r = new BufferedReader(
-                                  new InputStreamReader(proc.getInputStream()))) {
-                              String l;
-                              while ((l = r.readLine()) != null) {
-                                  final String s = l;
-                                  runOnUiThread(() -> append(s));
-                              }
-                          } catch (IOException ignored) {}
-                      }).start();
-                  } catch (Exception e) {
-                      append("Ошибка: " + e.getMessage());
                   }
               }
 
@@ -276,15 +252,16 @@ jobs:
           }
           JAVA
 
-          cp target/aarch64-linux-android/release/rust_messenger \
-             android/app/src/main/assets/rust_messenger
+          cp target/aarch64-linux-android/release/rust_messenger android/app/src/main/assets/rust_messenger
           chmod +x android/app/src/main/assets/rust_messenger
 
-      # --- СБОРКА APK ---
+          cd android
+          gradle wrapper --gradle-version 8.2 --quiet
+          chmod +x gradlew
+
       - name: Build APK
         run: |
           cd android
-          chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK
