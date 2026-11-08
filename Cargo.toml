@@ -3,5 +3,6 @@ name = "rust_messenger"
 version = "2.2.0"
 edition = "2021"
 
-[dependencies]
-# Никаких внешних зависимостей — всё на std!
+[[bin]]
+name = "rust_messenger"
+path = "src/main.rs"
