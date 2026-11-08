@@ -22,17 +22,19 @@ jobs:
       - name: Setup Rust Target
         run: rustup target add aarch64-linux-android
 
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c
+          add-to-path: true
+
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          skip-setup: true
-
+      # Кэш Gradle
       - name: Setup Gradle Cache
         uses: actions/cache@v4
         with:
@@ -61,13 +63,11 @@ jobs:
           mkdir -p android/app/src/main/jniLibs
           mkdir -p android/gradle/wrapper
 
-          # --- settings.gradle ---
           cat > android/settings.gradle <<EOF
           rootProject.name = "$APP_NAME"
           include ':app'
           EOF
 
-          # --- build.gradle (root) ---
           cat > android/build.gradle <<EOF
           buildscript {
               repositories { google(); mavenCentral() }
@@ -80,13 +80,11 @@ jobs:
           }
           EOF
 
-          # --- gradle.properties ---
           cat > android/gradle.properties <<EOF
           org.gradle.jvmargs=-Xmx2048m
           android.useAndroidX=true
           EOF
 
-          # --- app/build.gradle ---
           cat > android/app/build.gradle <<EOF
           plugins { id 'com.android.application' }
 
@@ -108,7 +106,6 @@ jobs:
           }
           EOF
 
-          # --- AndroidManifest.xml ---
           cat > android/app/src/main/AndroidManifest.xml <<EOF
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -126,7 +123,6 @@ jobs:
           </manifest>
           EOF
 
-          # --- MainActivity.java ---
           cat > android/app/src/main/java/$PKG_PATH/MainActivity.java <<'JAVA'
           package com.example.rustmessenger;
 
@@ -223,13 +219,17 @@ jobs:
           }
           JAVA
 
-          # Копируем ELF-бинарник в assets
           cp target/aarch64-linux-android/release/rust_messenger \
              android/app/src/main/assets/rust_messenger
           chmod +x android/app/src/main/assets/rust_messenger
 
-          # --- Генерируем Gradle wrapper ---
           gradle wrapper --gradle-version 8.2 --quiet --project-dir android
+
+      # ВОТ ЗДЕСЬ МЫ СКАЧИВАЕМ SDK, КОГДА RUST УЖЕ СОБРАН
+      - name: Setup Android SDK for Gradle
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: "16.0" # Принудительно указываем версию
 
       - name: Build APK
         run: |
