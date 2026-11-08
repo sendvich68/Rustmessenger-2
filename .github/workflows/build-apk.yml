@@ -17,13 +17,11 @@ jobs:
       - name: Force fix project structure
         run: |
           mkdir -p src
-          # Переименовываем файл в lib.rs, чтобы Cargo не искал fn main()
           if [ -f "src/main.rs" ]; then mv src/main.rs src/lib.rs; fi
           if [ -f "src/mine.rs" ]; then mv src/mine.rs src/lib.rs; fi
           if [ -f "main.rs" ]; then mv main.rs src/lib.rs; fi
           if [ -f "mine.rs" ]; then mv mine.rs src/lib.rs; fi
           
-          # Генерируем правильный Cargo.toml (с autobins = false)
           cat > Cargo.toml <<EOF
           [package]
           name = "rust_messenger"
@@ -38,8 +36,6 @@ jobs:
           EOF
           
           echo "✅ Структура исправлена"
-          ls -la src/
-          cat Cargo.toml
 
       - name: Setup Rust with Cache
         uses: Swatinem/rust-cache@v2
@@ -81,10 +77,12 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
+      # --- СБОРКА RUST ---
       - name: Build Rust binary
         run: |
           cargo ndk -t arm64-v8a -o ./android/app/src/main/jniLibs build --release
 
+      # --- ГЕНЕРАЦИЯ ANDROID ПРОЕКТА ---
       - name: Generate Android project
         run: |
           PKG_ID="com.example.rustmessenger"
@@ -208,13 +206,23 @@ jobs:
           }
           JAVA
 
-          # Копируем .so файл (lib.rs компилируется в .so)
           cp target/aarch64-linux-android/release/librust_messenger.so android/app/src/main/jniLibs/arm64-v8a/ 2>/dev/null || true
 
+      # --- СКАЧИВАЕМ ПРАВИЛЬНЫЙ GRADLE ---
+      - name: Download Gradle 8.2
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
+          unzip -q gradle-8.2-bin.zip
+          echo "$PWD/gradle-8.2/bin" >> $GITHUB_PATH
+
+      # --- ГЕНЕРАЦИЯ WRAPPER (современным Gradle) ---
+      - name: Setup Gradle Wrapper
+        run: |
           cd android
           gradle wrapper --gradle-version 8.2 --quiet
           chmod +x gradlew
 
+      # --- СБОРКА APK ---
       - name: Build APK
         run: |
           cd android
