@@ -13,24 +13,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ПРИНУДИТЕЛЬНОЕ ИСПРАВЛЕНИЕ СТРУКТУРЫ
-      # Если файл случайно называется mine.rs или лежит не там, мы исправим это на лету
+      # --- ПРИНУДИТЕЛЬНОЕ ИСПРАВЛЕНИЕ СТРУКТУРЫ ---
       - name: Force fix project structure
         run: |
           mkdir -p src
+          # Ищем твой файл и перекладываем его куда надо
           if [ -f "src/mine.rs" ]; then mv src/mine.rs src/main.rs; fi
           if [ -f "mine.rs" ]; then mv mine.rs src/main.rs; fi
           if [ -f "main.rs" ]; then mv main.rs src/main.rs; fi
           
-          # Принудительно создаем правильный Cargo.toml
+          # Создаем правильный Cargo.toml (как библиотеку)
           cat > Cargo.toml <<EOF
           [package]
           name = "rust_messenger"
           version = "2.2.0"
           edition = "2021"
 
-          [[bin]]
+          [lib]
           name = "rust_messenger"
+          crate-type = ["cdylib"]
           path = "src/main.rs"
           EOF
           
@@ -38,6 +39,7 @@ jobs:
           ls -la src/
           cat Cargo.toml
 
+      # --- ОКРУЖЕНИЕ ---
       - name: Setup Rust with Cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -72,10 +74,12 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
+      # --- СБОРКА RUST ---
       - name: Build Rust binary
         run: |
           cargo ndk -t arm64-v8a -o ./android/app/src/main/jniLibs build --release
 
+      # --- ГЕНЕРАЦИЯ ANDROID ПРОЕКТА ---
       - name: Generate Android project
         run: |
           PKG_ID="com.example.rustmessenger"
@@ -87,11 +91,13 @@ jobs:
           mkdir -p android/app/src/main/jniLibs
           mkdir -p android/gradle/wrapper
 
+          # --- settings.gradle ---
           cat > android/settings.gradle <<EOF
           rootProject.name = "$APP_NAME"
           include ':app'
           EOF
 
+          # --- build.gradle (root) ---
           cat > android/build.gradle <<EOF
           buildscript {
               repositories { google(); mavenCentral() }
@@ -104,11 +110,13 @@ jobs:
           }
           EOF
 
+          # --- gradle.properties ---
           cat > android/gradle.properties <<EOF
           org.gradle.jvmargs=-Xmx2048m
           android.useAndroidX=true
           EOF
 
+          # --- app/build.gradle ---
           cat > android/app/build.gradle <<EOF
           plugins { id 'com.android.application' }
 
@@ -130,6 +138,7 @@ jobs:
           }
           EOF
 
+          # --- AndroidManifest.xml ---
           cat > android/app/src/main/AndroidManifest.xml <<EOF
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -147,6 +156,7 @@ jobs:
           </manifest>
           EOF
 
+          # --- MainActivity.java ---
           cat > android/app/src/main/java/$PKG_PATH/MainActivity.java <<'JAVA'
           package com.example.rustmessenger;
 
@@ -243,12 +253,15 @@ jobs:
           }
           JAVA
 
+          # Копируем скомпилированный бинарник в assets
           cp target/aarch64-linux-android/release/rust_messenger \
              android/app/src/main/assets/rust_messenger
           chmod +x android/app/src/main/assets/rust_messenger
 
+          # Создаем Gradle wrapper
           gradle wrapper --gradle-version 8.2 --quiet --project-dir android
 
+      # --- НАСТРОЙКА SDK И СБОРКА APK ---
       - name: Setup Android SDK for Gradle
         uses: android-actions/setup-android@v3
         with:
@@ -265,4 +278,4 @@ jobs:
         with:
           name: RustMessenger-APK
           path: android/app/build/outputs/apk/release/app-release.apk
-          retention-days: 30 км
+          retention-days: 30
