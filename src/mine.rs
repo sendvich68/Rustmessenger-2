@@ -49,30 +49,10 @@ fn save_users(names: &[String]) {
     }
 }
 
-fn save_host_nick(nick: &str) {
-    if let Ok(mut f) = fs::File::create(HOST_NICK_FILE) {
-        let _ = writeln!(f, "{}", nick);
-    }
-}
-
-fn load_host_nick() -> Option<String> {
-    if Path::new(HOST_NICK_FILE).exists() {
-        if let Ok(content) = fs::read_to_string(HOST_NICK_FILE) {
-            let n = content.trim().to_string();
-            if !n.is_empty() {
-                return Some(n);
-            }
-        }
-    }
-    None
-}
-
 // === ТОЧКА ВХОДА ДЛЯ ANDROID (JNI) ===
 // Мы вызываем эту функцию из Java
 #[no_mangle]
 pub extern "C" fn main_android() -> i32 {
-    // В целях экономии запускаем сервер сразу. 
-    // В идеале тут нужно передавать флаг (сервер/клиент), но для теста сгодится.
     run_server_thread(); 
     0
 }
